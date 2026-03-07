@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chess 2</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <h1>Chess 2</h1>
+      <div class="topbar-actions">
+        <button id="emptyBoardBtn" type="button">Empty Board</button>
+        <button id="resetBtn" type="button">Reset Game</button>
+        <button id="saveBtn" type="button">Submit</button>
+      </div>
+    </header>
+
+    <section class="info" aria-live="polite">
+      <p id="statusText">White to move</p>
+      <p id="detailText">Click a piece, then click a highlighted square.</p>
+      <p id="turnCounterText">Turn 1</p>
+      <p id="stageHazardText">Stage Hazard: none</p>
+      <p id="stageHazardDetailText">Stage Hazard Description: none</p>
+    </section>
+
+    <section class="board-wrap">
+      <div id="board" class="board" role="grid" aria-label="Chess board"></div>
+      <aside class="legend">
+        <h2>Rules</h2>
+        <p>Two players can play on this device by taking turns.</p>
+        <p>All basic chess rules apply.</p>
+        <p>En passant is forced.</p>
+        <p>You cannot take an extra move if you check your opponent on the first move.</p>
+
+        <section class="effects-panel">
+          <h3>White Active Effects</h3>
+          <ul id="whiteEffectsList" class="effects-list"></ul>
+        </section>
+
+        <section class="effects-panel">
+          <h3>Black Active Effects</h3>
+          <ul id="blackEffectsList" class="effects-list"></ul>
+        </section>
+      </aside>
+    </section>
+
+    <section id="promotionModal" class="promotion-modal" hidden aria-live="polite">
+      <div class="promotion-card" role="dialog" aria-modal="true" aria-label="Choose promotion piece">
+        <h2>Choose Promotion</h2>
+        <div id="promotionChoices" class="promotion-choices"></div>
+      </div>
+    </section>
+
+    <section id="gameOverModal" class="game-over-modal" hidden aria-live="assertive">
+      <div id="gameOverCard" class="game-over-card" role="dialog" aria-modal="true" aria-label="Game over">
+        <p id="gameOverBadge" class="game-over-badge">Game Over</p>
+        <h2 id="gameOverTitle" class="game-over-title">Checkmate</h2>
+        <p id="gameOverText" class="game-over-text">White wins</p>
+        <button id="playAgainBtn" type="button" class="play-again-btn">Play Again</button>
+      </div>
+    </section>
+
+    <section id="effectPickerModal" class="effect-picker-modal" hidden aria-live="polite">
+      <div class="effect-picker-card" role="dialog" aria-modal="true" aria-label="Choose random effect">
+        <p id="effectPickerPrompt" class="effect-picker-prompt">Choose your effect</p>
+        <h2 class="effect-picker-title">Pick One Effect</h2>
+        <div id="effectPickerChoices" class="effect-picker-choices"></div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
