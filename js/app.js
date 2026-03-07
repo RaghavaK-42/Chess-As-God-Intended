@@ -13,7 +13,29 @@ const firebaseConfig = {
 
 const firebaseApp = initializeApp(firebaseConfig);
 const firebaseDb = getDatabase(firebaseApp);
-const firebaseGameStateRef = ref(firebaseDb, "chess2/sharedState");
+const FIREBASE_SAVES_ROOT = "chess2/saves";
+
+function sanitizeGameName(rawName) {
+  if (typeof rawName !== "string") {
+    return "";
+  }
+  return rawName.trim().replace(/\s+/g, " ");
+}
+
+function toFirebaseSaveKey(gameName) {
+  const normalized = sanitizeGameName(gameName).toLowerCase();
+  if (!normalized) {
+    return "";
+  }
+
+  // Firebase keys cannot contain . # $ [ ] /
+  return normalized.replace(/[.#$\[\]/]/g, "_");
+}
+
+function getGameStateRefByName(gameName) {
+  const key = toFirebaseSaveKey(gameName);
+  return key ? ref(firebaseDb, `${FIREBASE_SAVES_ROOT}/${key}`) : null;
+}
 
 //Typ waluigi for board editor
 //Press \ (backslash) in-game
@@ -2093,6 +2115,9 @@ const syncInstanceId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 let syncLocalWriteCounter = 0;
 let latestSeenSyncRevision = 0;
 let isApplyingRemoteSnapshot = false;
+let currentSaveGameName = "";
+let currentSaveGameStateRef = null;
+let stopFirebaseRealtimeSync = null;
 
 let captureCooldownByColor = {
   white: new Set(),
@@ -2662,18 +2687,23 @@ async function saveStateToFirebase(trigger) {
     return { ok: false, error: new Error("State sync is currently applying a remote update.") };
   }
 
+  if (!currentSaveGameStateRef) {
+    return { ok: false, error: new Error("No game name selected. Reload and choose a game name.") };
+  }
+
   const payload = {
     revision: nextSyncRevision(),
     updatedAt: Date.now(),
     updatedBy: syncInstanceId,
     trigger,
+    gameName: currentSaveGameName,
     snapshot: sanitizeForFirebase(buildSyncSnapshot()),
   };
 
   latestSeenSyncRevision = payload.revision;
 
   try {
-    await set(firebaseGameStateRef, payload);
+    await set(currentSaveGameStateRef, payload);
     return { ok: true, error: null };
   } catch (error) {
     console.error("Firebase save failed:", error);
@@ -2685,11 +2715,15 @@ async function saveStateToFirebase(trigger) {
 async function loadStateFromFirebase(options = {}) {
   const { showMissingMessage = false, showLoadedMessage = true } = options;
 
+  if (!currentSaveGameStateRef) {
+    return { loaded: false, missing: false, error: new Error("No game name selected.") };
+  }
+
   try {
-    const snapshot = await get(firebaseGameStateRef);
+    const snapshot = await get(currentSaveGameStateRef);
     if (!snapshot.exists()) {
       if (showMissingMessage) {
-        detailTextEl.textContent = "No Firebase save found yet.";
+        detailTextEl.textContent = `No Firebase save found for \"${currentSaveGameName}\" yet.`;
       }
       return { loaded: false, missing: true, error: null };
     }
@@ -2706,7 +2740,7 @@ async function loadStateFromFirebase(options = {}) {
     if (applied) {
       latestSeenSyncRevision = Math.max(latestSeenSyncRevision, Number(payload.revision) || 0);
       if (showLoadedMessage) {
-        detailTextEl.textContent = "Loaded saved game from Firebase.";
+        detailTextEl.textContent = `Loaded \"${currentSaveGameName}\" from Firebase.`;
       }
       render();
       return { loaded: true, missing: false, error: null };
@@ -2721,7 +2755,34 @@ async function loadStateFromFirebase(options = {}) {
   }
 }
 
+function askForGameName() {
+  while (true) {
+    const entered = window.prompt("Name the Game:", "");
+    if (entered === null) {
+      continue;
+    }
+
+    const normalized = sanitizeGameName(entered);
+    if (!normalized) {
+      continue;
+    }
+
+    return normalized;
+  }
+}
+
 async function bootstrapFirebaseState() {
+  const chosenGameName = askForGameName();
+  currentSaveGameName = chosenGameName;
+  currentSaveGameStateRef = getGameStateRefByName(chosenGameName);
+
+  if (!currentSaveGameStateRef) {
+    detailTextEl.textContent = "Could not create Firebase key from this game name.";
+    render();
+    return;
+  }
+
+  latestSeenSyncRevision = 0;
   startFirebaseStateSync();
 
   const result = await loadStateFromFirebase({
@@ -2730,14 +2791,37 @@ async function bootstrapFirebaseState() {
   });
 
   if (result.loaded) {
+    detailTextEl.textContent = `Loaded \"${currentSaveGameName}\" from Firebase.`;
+    render();
     return;
+  }
+
+  if (result.missing) {
+    const initSave = await saveStateToFirebase("new-slot-init");
+    if (initSave.ok) {
+      detailTextEl.textContent = `Created new Firebase save \"${currentSaveGameName}\".`;
+    } else {
+      const message = initSave.error && initSave.error.message
+        ? initSave.error.message
+        : "Unknown error";
+      detailTextEl.textContent = `Failed to initialize save \"${currentSaveGameName}\": ${message}`;
+    }
   }
 
   render();
 }
 
 function startFirebaseStateSync() {
-  onValue(firebaseGameStateRef, (snapshot) => {
+  if (!currentSaveGameStateRef) {
+    return;
+  }
+
+  if (typeof stopFirebaseRealtimeSync === "function") {
+    stopFirebaseRealtimeSync();
+    stopFirebaseRealtimeSync = null;
+  }
+
+  stopFirebaseRealtimeSync = onValue(currentSaveGameStateRef, (snapshot) => {
     if (!snapshot.exists()) {
       return;
     }
@@ -3529,7 +3613,7 @@ if (saveBtnEl) {
   saveBtnEl.addEventListener("click", async () => {
     const result = await saveStateToFirebase("manual-save");
     if (result.ok) {
-      detailTextEl.textContent = "Game saved to Firebase.";
+      detailTextEl.textContent = `Saved \"${currentSaveGameName}\" to Firebase.`;
       return;
     }
 
