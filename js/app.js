@@ -2331,7 +2331,7 @@ const BENEFICIAL_EFFECT_POOL = [
   { id: 16, name: "Queen Echo", duration: 2, category: "Beneficial", description: "Queen also gains knight jumps." },
   { id: 17, name: "Knight Net", duration: 2, category: "Beneficial", description: "Enemy king cannot move to squares near your knights." },
   { id: 18, name: "Royal Guard", duration: 3, category: "Beneficial", description: "Pieces next to your king are immune to bishop/knight captures." },
-  { id: 19, name: "Pawn Factory", duration: 1, category: "Beneficial", description: "Pawns promote early when reaching the fifth rank." },
+  { id: 19, name: "Pawn Factory", duration: 1, category: "Beneficial", description: "Pawns promote early when reaching the fifth rank for white and fourth rank for black." },
   { id: 20, name: "Backline Boost", duration: 3, category: "Beneficial", description: "Back-rank pieces can step one square forward if empty." },
   { id: 21, name: "Diagonal Charge", duration: 2, category: "Beneficial", description: "Pawns may move diagonally into empty squares." },
   { id: 22, name: "Iron Rook", duration: 4, category: "Beneficial", description: "Enemy pawns cannot capture your rooks." },

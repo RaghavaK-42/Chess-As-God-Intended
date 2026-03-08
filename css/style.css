@@ -348,6 +348,7 @@ button:hover {
   place-items: center;
   padding: 1rem;
   background: rgba(5, 10, 18, 0.75);
+  z-index: 30;
 }
 
 .promotion-modal[hidden] {

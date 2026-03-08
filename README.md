@@ -59,7 +59,7 @@ Are you a fan of chess but are sick of the better player always winning? Have yo
 | 16 | Queen Echo | 2 | Queen also gains knight jumps. |
 | 17 | Knight Net | 2 | Enemy king cannot move to squares near your knights. |
 | 18 | Royal Guard | 3 | Pieces next to your king are immune to bishop/knight captures. |
-| 19 | Pawn Factory | 1 | Pawns promote early when reaching the fifth rank. |
+| 19 | Pawn Factory | 1 | Pawns promote early when reaching the fifth rank for white, and 4th rank for black. |
 | 20 | Backline Boost | 3 | Back-rank pieces can step one square forward if empty. |
 | 21 | Diagonal Charge | 2 | Pawns may move diagonally into empty squares. |
 | 22 | Iron Rook | 4 | Enemy pawns cannot capture your rooks. |
