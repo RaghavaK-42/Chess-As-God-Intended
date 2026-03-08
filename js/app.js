@@ -14,6 +14,12 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const firebaseDb = getDatabase(firebaseApp);
 const FIREBASE_SAVES_ROOT = "chess2/saves";
+const LAST_GAME_NAME_STORAGE_KEY = "chess2:lastGameName";
+const RESTORE_ON_RELOAD_STORAGE_KEY = "chess2:restoreOnReload";
+const POWERUP_SOUND_PATH = "Sounds/Lightsaber.mp3";
+const POWERUP_LIGHTNING_DURATION_MS = 900;
+const CHECKMATE_SOUND_PATH = "Sounds/ode-to-joy.mp3";
+const STALEMATE_SOUND_PATH = "Sounds/roblox_oof.mp3";
 
 function sanitizeGameName(rawName) {
   if (typeof rawName !== "string") {
@@ -35,6 +41,48 @@ function toFirebaseSaveKey(gameName) {
 function getGameStateRefByName(gameName) {
   const key = toFirebaseSaveKey(gameName);
   return key ? ref(firebaseDb, `${FIREBASE_SAVES_ROOT}/${key}`) : null;
+}
+
+function rememberGameName(gameName) {
+  const normalized = sanitizeGameName(gameName);
+  if (!normalized) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(LAST_GAME_NAME_STORAGE_KEY, normalized);
+  } catch {
+    // Ignore storage errors and continue without remembered save support.
+  }
+}
+
+function getRememberedGameName() {
+  try {
+    const stored = window.localStorage.getItem(LAST_GAME_NAME_STORAGE_KEY);
+    return sanitizeGameName(stored || "");
+  } catch {
+    return "";
+  }
+}
+
+function shouldRestoreSavedGameOnReload() {
+  try {
+    return window.sessionStorage.getItem(RESTORE_ON_RELOAD_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function setRestoreSavedGameOnReload(enabled) {
+  try {
+    if (enabled) {
+      window.sessionStorage.setItem(RESTORE_ON_RELOAD_STORAGE_KEY, "1");
+    } else {
+      window.sessionStorage.removeItem(RESTORE_ON_RELOAD_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage errors and continue.
+  }
 }
 
 //Typ waluigi for board editor
@@ -1532,9 +1580,6 @@ class ChessGame {
       }
 
       if (current.type === "bishop") {
-        if (activeHazard === 97) {
-          return false;
-        }
         if (encountered.length === 1) {
           return true;
         }
@@ -2072,6 +2117,7 @@ const boardEl = document.getElementById("board");
 const statusTextEl = document.getElementById("statusText");
 const detailTextEl = document.getElementById("detailText");
 const resetBtnEl = document.getElementById("resetBtn");
+const undoBtnEl = document.getElementById("undoBtn");
 const emptyBoardBtnEl = document.getElementById("emptyBoardBtn");
 const promotionModalEl = document.getElementById("promotionModal");
 const promotionChoicesEl = document.getElementById("promotionChoices");
@@ -2118,6 +2164,25 @@ let isApplyingRemoteSnapshot = false;
 let currentSaveGameName = "";
 let currentSaveGameStateRef = null;
 let stopFirebaseRealtimeSync = null;
+let lastMovedSquare = null;
+let powerUpLightningSquare = null;
+let clearPowerUpLightningTimeoutId = null;
+let hasPlayedCheckmateAudio = false;
+let hasPlayedStalemateAudio = false;
+
+const powerUpAudio = new Audio(POWERUP_SOUND_PATH);
+powerUpAudio.preload = "auto";
+const checkmateAudio = new Audio(CHECKMATE_SOUND_PATH);
+checkmateAudio.preload = "auto";
+const stalemateAudio = new Audio(STALEMATE_SOUND_PATH);
+stalemateAudio.preload = "auto";
+
+function stopAllGameAudio() {
+  [powerUpAudio, checkmateAudio, stalemateAudio].forEach((audio) => {
+    audio.pause();
+    audio.currentTime = 0;
+  });
+}
 
 let captureCooldownByColor = {
   white: new Set(),
@@ -2673,6 +2738,8 @@ function applySnapshotToRuntime(snapshot) {
     openEffectPicker();
   }
 
+  lastMovedSquare = null;
+  clearPowerUpLightningEffect();
   clearSelection();
   return true;
 }
@@ -2772,9 +2839,13 @@ function askForGameName() {
 }
 
 async function bootstrapFirebaseState() {
-  const chosenGameName = askForGameName();
+  const shouldRestore = shouldRestoreSavedGameOnReload();
+  const rememberedGameName = shouldRestore ? getRememberedGameName() : "";
+  const chosenGameName = rememberedGameName || askForGameName();
+  setRestoreSavedGameOnReload(false);
   currentSaveGameName = chosenGameName;
   currentSaveGameStateRef = getGameStateRefByName(chosenGameName);
+  rememberGameName(chosenGameName);
 
   if (!currentSaveGameStateRef) {
     detailTextEl.textContent = "Could not create Firebase key from this game name.";
@@ -2851,6 +2922,19 @@ function startFirebaseStateSync() {
   });
 }
 
+async function triggerManualSave(source = "manual-save") {
+  const result = await saveStateToFirebase(source);
+  if (result.ok) {
+    detailTextEl.textContent = `Saved \"${currentSaveGameName}\" to Firebase.`;
+    return;
+  }
+
+  const message = result.error && result.error.message
+    ? result.error.message
+    : "Unknown error";
+  detailTextEl.textContent = `Firebase save failed: ${message}`;
+}
+
 function render() {
   const state = game.getState();
   const activeHazardId = getActiveStageHazardId();
@@ -2881,6 +2965,10 @@ function render() {
 
       if (legalTargets.some((m) => m.row === row && m.col === col)) {
         square.classList.add("legal");
+      }
+
+      if (powerUpLightningSquare && powerUpLightningSquare.row === row && powerUpLightningSquare.col === col) {
+        square.classList.add("powerup-lightning");
       }
 
       const piece = state.board[row][col];
@@ -3006,6 +3094,8 @@ function renderGameOverFanfare(state) {
   if (!state.gameOver) {
     gameOverModalEl.hidden = true;
     gameOverCardEl.classList.remove("stalemate");
+    hasPlayedCheckmateAudio = false;
+    hasPlayedStalemateAudio = false;
     return;
   }
 
@@ -3013,10 +3103,32 @@ function renderGameOverFanfare(state) {
     gameOverCardEl.classList.remove("stalemate");
     gameOverTitleEl.textContent = "Checkmate";
     gameOverTextEl.textContent = `${capitalize(state.winner)} wins the game.`;
+
+    if (!hasPlayedCheckmateAudio) {
+      hasPlayedCheckmateAudio = true;
+      hasPlayedStalemateAudio = false;
+      try {
+        checkmateAudio.currentTime = 0;
+        void checkmateAudio.play();
+      } catch {
+        // Ignore playback failures from browser autoplay restrictions.
+      }
+    }
   } else {
     gameOverCardEl.classList.add("stalemate");
     gameOverTitleEl.textContent = "Stalemate";
     gameOverTextEl.textContent = "Draw. Nobody wins this one.";
+    hasPlayedCheckmateAudio = false;
+
+    if (!hasPlayedStalemateAudio) {
+      hasPlayedStalemateAudio = true;
+      try {
+        stalemateAudio.currentTime = 0;
+        void stalemateAudio.play();
+      } catch {
+        // Ignore playback failures from browser autoplay restrictions.
+      }
+    }
   }
 
   gameOverModalEl.hidden = false;
@@ -3029,6 +3141,44 @@ function capitalize(value) {
 function clearSelection() {
   selected = null;
   legalTargets = [];
+}
+
+function clearPowerUpLightningEffect() {
+  powerUpLightningSquare = null;
+  if (clearPowerUpLightningTimeoutId) {
+    window.clearTimeout(clearPowerUpLightningTimeoutId);
+    clearPowerUpLightningTimeoutId = null;
+  }
+}
+
+function triggerPowerUpLightning(color) {
+  if (!lastMovedSquare || lastMovedSquare.color !== color) {
+    return;
+  }
+
+  powerUpLightningSquare = {
+    row: lastMovedSquare.row,
+    col: lastMovedSquare.col,
+  };
+
+  if (clearPowerUpLightningTimeoutId) {
+    window.clearTimeout(clearPowerUpLightningTimeoutId);
+  }
+
+  clearPowerUpLightningTimeoutId = window.setTimeout(() => {
+    clearPowerUpLightningTimeoutId = null;
+    powerUpLightningSquare = null;
+    render();
+  }, POWERUP_LIGHTNING_DURATION_MS);
+
+  try {
+    powerUpAudio.currentTime = 0;
+    void powerUpAudio.play();
+  } catch {
+    // Ignore playback failures from browser autoplay restrictions.
+  }
+
+  render();
 }
 
 function sampleRandomEffects(count) {
@@ -3229,6 +3379,7 @@ function applyEffectToColor(chosenEffect, color) {
     game.turn = color;
     game.bonusMove = { color, requiredType: null };
     detailTextEl.textContent = `${capitalize(color)} activated ${chosenEffect.name}.`;
+    triggerPowerUpLightning(color);
     return true;
   }
 
@@ -3254,6 +3405,7 @@ function applyEffectToColor(chosenEffect, color) {
   }
 
   detailTextEl.textContent = `${capitalize(color)} gained ${chosenEffect.name}.`;
+  triggerPowerUpLightning(color);
   return true;
 }
 
@@ -3395,6 +3547,8 @@ function clearTransientGameState() {
   game.pendingBonusTurns = { white: 0, black: 0 };
   game.safePassageShields = { white: null, black: null };
   resetTurnAndStageHazards();
+  lastMovedSquare = null;
+  clearPowerUpLightningEffect();
   closePromotionPicker();
   closeEffectPicker();
   clearSelection();
@@ -3407,6 +3561,13 @@ function commitMove(from, to, promotionType, movingColor) {
     render();
     return;
   }
+
+  lastMovedSquare = {
+    row: to.row,
+    col: to.col,
+    color: movingColor,
+  };
+  clearPowerUpLightningEffect();
 
   const fullTurnEnded = game.turn !== movingColor || game.gameOver;
   if (fullTurnEnded) {
@@ -3422,6 +3583,10 @@ function commitMove(from, to, promotionType, movingColor) {
     if (!game.gameOver && shouldTriggerEffectDraft()) {
       startEffectDraft(movingColor);
     }
+  }
+
+  if (game.gameOver) {
+    void saveStateToFirebase("auto-game-over");
   }
 
   render();
@@ -3548,6 +3713,12 @@ effectPickerChoicesEl.addEventListener("click", (event) => {
 });
 
 document.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.repeat) {
+    event.preventDefault();
+    void triggerManualSave("enter-save");
+    return;
+  }
+
   if (event.key.length === 1 && /^[a-z]$/i.test(event.key)) {
     waluigiBuffer = (waluigiBuffer + event.key.toLowerCase()).slice(-WALUIGI_CODE.length);
     if (waluigiBuffer === WALUIGI_CODE) {
@@ -3588,6 +3759,14 @@ resetBtnEl.addEventListener("click", () => {
   render();
 });
 
+if (undoBtnEl) {
+  undoBtnEl.addEventListener("click", () => {
+    rememberGameName(currentSaveGameName);
+    setRestoreSavedGameOnReload(true);
+    window.location.reload();
+  });
+}
+
 emptyBoardBtnEl.addEventListener("click", () => {
   game.board = Array.from({ length: 8 }, () => Array(8).fill(null));
   game.customStartingBoard = null;
@@ -3602,6 +3781,7 @@ emptyBoardBtnEl.addEventListener("click", () => {
 });
 
 playAgainBtnEl.addEventListener("click", () => {
+  stopAllGameAudio();
   game.reset();
   clearTransientGameState();
   devBoardEditMode = false;
@@ -3611,16 +3791,7 @@ playAgainBtnEl.addEventListener("click", () => {
 
 if (saveBtnEl) {
   saveBtnEl.addEventListener("click", async () => {
-    const result = await saveStateToFirebase("manual-save");
-    if (result.ok) {
-      detailTextEl.textContent = `Saved \"${currentSaveGameName}\" to Firebase.`;
-      return;
-    }
-
-    const message = result.error && result.error.message
-      ? result.error.message
-      : "Unknown error";
-    detailTextEl.textContent = `Firebase save failed: ${message}`;
+    await triggerManualSave("manual-save");
   });
 }
 
