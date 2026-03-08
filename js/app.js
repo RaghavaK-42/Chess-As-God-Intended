@@ -2403,7 +2403,7 @@ const STAGE_HAZARDS_POOL = [
   { id: 85, name: "Frostbite", description: "At each turn start, one piece type is frozen for both players." },
   { id: 86, name: "Minefield", description: "3 mines are placed on empty board squares. Pieces landing on them are captured." },
   { id: 87, name: "Pawn Ceiling", description: "Pawns cannot move beyond rank 5 (white) or rank 4 (black)." },
-  { id: 88, name: "Sticky Mines", description: "3 mines are placed on the board. Pieces on or adjacent to them cannot move." },
+  { id: 88, name: "Frost Mines", description: "3 mines are placed on the board. Pieces on or adjacent to them cannot move." },
   { id: 89, name: "Uno Reverse", description: "If a player gets checkmated, they win." },
   { id: 90, name: "Female Empowerment", description: "The Queen cannot move only one space." },
   { id: 91, name: "Color Lock", description: "Pieces must remain on the color of square they started from." },

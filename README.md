@@ -133,7 +133,7 @@ Are you a fan of chess but are sick of the better player always winning? Have yo
 | 85 | Frostbite | At each turn start, one piece type is frozen for both players. |
 | 86 | Minefield | 3 mines are placed on empty board squares. Pieces landing on them are captured. |
 | 87 | Pawn Ceiling | Pawns cannot move beyond rank 5 (white) or rank 4 (black). |
-| 88 | Sticky Mines | 3 mines are placed on the board. Pieces on or adjacent to them cannot move. |
+| 88 | Frost Mines | 3 mines are placed on the board. Pieces on or adjacent to them cannot move. |
 | 89 | Uno Reverse | If a player gets checkmated, they win. |
 | 90 | Female Empowerment | The queen cannot move only one space. |
 | 91 | Color Lock | Pieces must remain on the color of square they started from. |
