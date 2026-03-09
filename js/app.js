@@ -102,6 +102,7 @@ class ChessGame {
   reset() {
     this.customStartingBoard = null;
     this.board = this.createInitialBoard();
+    this.lostPieces = { white: [], black: [] };
     this.castlingRights = this.createInitialCastlingRights();
     this.bonusMove = null;
     this.pendingBonusTurns = { white: 0, black: 0 };
@@ -141,6 +142,10 @@ class ChessGame {
   getState() {
     return {
       board: this.cloneBoard(this.board),
+      lostPieces: {
+        white: [...this.lostPieces.white],
+        black: [...this.lostPieces.black],
+      },
       turn: this.turn,
       winner: this.winner,
       gameOver: this.gameOver,
@@ -161,6 +166,27 @@ class ChessGame {
 
   cloneBoard(board) {
     return board.map((row) => row.map((p) => (p ? { ...p } : null)));
+  }
+
+  recordLostPiece(piece) {
+    if (!piece || (piece.color !== "white" && piece.color !== "black") || typeof piece.type !== "string") {
+      return;
+    }
+    this.lostPieces[piece.color].push(piece.type);
+  }
+
+  removeMostRecentLostPiece(color, type) {
+    if ((color !== "white" && color !== "black") || typeof type !== "string") {
+      return;
+    }
+
+    const list = this.lostPieces[color];
+    for (let index = list.length - 1; index >= 0; index -= 1) {
+      if (list[index] === type) {
+        list.splice(index, 1);
+        return;
+      }
+    }
   }
 
   isInside(row, col) {
@@ -1843,9 +1869,14 @@ class ChessGame {
     const opponentColor = movingColor === "white" ? "black" : "white";
     const wasBonusMove = !!this.bonusMove;
     const capturedPiece = this.board[to.row][to.col];
-    let didCapture = !!capturedPiece;
+    const isFriendlyKingSwap = selectedMove.isKingSwap && capturedPiece && capturedPiece.color === movingColor;
+    let didCapture = !!capturedPiece && !isFriendlyKingSwap;
     let capturedTypeForPawnEmpowerment = capturedPiece ? capturedPiece.type : null;
     let currentSquareAfterMove = { row: to.row, col: to.col };
+
+    if (capturedPiece && !isFriendlyKingSwap) {
+      this.recordLostPiece(capturedPiece);
+    }
 
     if (selectedMove.isKingSwap && capturedPiece && capturedPiece.color === movingColor) {
       this.board[to.row][to.col] = piece;
@@ -1859,6 +1890,7 @@ class ChessGame {
       const epPiece = this.board[selectedMove.capture.row][selectedMove.capture.col];
       if (epPiece) {
         capturedTypeForPawnEmpowerment = epPiece.type;
+        this.recordLostPiece(epPiece);
       }
       this.board[selectedMove.capture.row][selectedMove.capture.col] = null;
       didCapture = true;
@@ -1930,6 +1962,7 @@ class ChessGame {
       const homeSquare = capturedPiece.color === "white" ? { row: 7, col: 3 } : { row: 0, col: 3 };
       if (!this.board[homeSquare.row][homeSquare.col]) {
         this.board[homeSquare.row][homeSquare.col] = { type: "queen", color: capturedPiece.color, originParity: (homeSquare.row + homeSquare.col) % 2 };
+        this.removeMostRecentLostPiece(capturedPiece.color, "queen");
       }
     }
 
@@ -1974,6 +2007,7 @@ class ChessGame {
     if ((isStageHazardActive(86) || isStageHazardActive(88)) && isMineSquare(currentSquareAfterMove.row, currentSquareAfterMove.col)) {
       const landedPiece = this.board[currentSquareAfterMove.row][currentSquareAfterMove.col];
       if (isStageHazardActive(86) && landedPiece && landedPiece.type !== "king") {
+        this.recordLostPiece(landedPiece);
         this.board[currentSquareAfterMove.row][currentSquareAfterMove.col] = null;
         didCapture = true;
       }
@@ -2128,6 +2162,8 @@ const gameOverTextEl = document.getElementById("gameOverText");
 const playAgainBtnEl = document.getElementById("playAgainBtn");
 const whiteEffectsListEl = document.getElementById("whiteEffectsList");
 const blackEffectsListEl = document.getElementById("blackEffectsList");
+const whiteLostPiecesListEl = document.getElementById("whiteLostPiecesList");
+const blackLostPiecesListEl = document.getElementById("blackLostPiecesList");
 const effectPickerModalEl = document.getElementById("effectPickerModal");
 const effectPickerPromptEl = document.getElementById("effectPickerPrompt");
 const effectPickerChoicesEl = document.getElementById("effectPickerChoices");
@@ -2541,6 +2577,23 @@ function normalizeEffectsFromSync(effects) {
     .filter((effect) => effect.remainingTurns > 0);
 }
 
+function normalizeLostPiecesFromSync(lostPieces) {
+  const allowedTypes = new Set(["pawn", "knight", "bishop", "rook", "queen", "king"]);
+  const normalizeSide = (side) => {
+    if (!Array.isArray(side)) {
+      return [];
+    }
+    return side
+      .map((pieceType) => String(pieceType || "").toLowerCase())
+      .filter((pieceType) => allowedTypes.has(pieceType));
+  };
+
+  return {
+    white: normalizeSide(lostPieces && lostPieces.white),
+    black: normalizeSide(lostPieces && lostPieces.black),
+  };
+}
+
 function findHazardById(hazardId) {
   if (!Number.isFinite(Number(hazardId))) {
     return null;
@@ -2600,6 +2653,10 @@ function buildSyncSnapshot() {
     game: {
       board: clonePlainBoard(game.board),
       customStartingBoard: game.customStartingBoard ? clonePlainBoard(game.customStartingBoard) : null,
+      lostPieces: {
+        white: [...game.lostPieces.white],
+        black: [...game.lostPieces.black],
+      },
       turn: game.turn,
       winner: game.winner,
       gameOver: game.gameOver,
@@ -2665,6 +2722,7 @@ function applySnapshotToRuntime(snapshot) {
   game.customStartingBoard = gameState.customStartingBoard
     ? clonePlainBoard(gameState.customStartingBoard)
     : null;
+  game.lostPieces = normalizeLostPiecesFromSync(gameState.lostPieces);
 
   game.turn = gameState.turn === "black" ? "black" : "white";
   game.winner = gameState.winner === "white" || gameState.winner === "black" ? gameState.winner : null;
@@ -3062,11 +3120,55 @@ function render() {
 
   renderGameOverFanfare(state);
   renderActiveEffects();
+  renderLostPieces();
 }
 
 function renderActiveEffects() {
   renderSideEffectsList(whiteEffectsListEl, activeEffects.white);
   renderSideEffectsList(blackEffectsListEl, activeEffects.black);
+}
+
+function renderLostPieces() {
+  renderSideLostPiecesList(whiteLostPiecesListEl, game.lostPieces.white);
+  renderSideLostPiecesList(blackLostPiecesListEl, game.lostPieces.black);
+}
+
+function renderSideLostPiecesList(listEl, lostPieces) {
+  if (!listEl) {
+    return;
+  }
+
+  listEl.innerHTML = "";
+
+  if (!Array.isArray(lostPieces) || lostPieces.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "empty";
+    empty.textContent = "No lost pieces";
+    listEl.appendChild(empty);
+    return;
+  }
+
+  const pieceOrder = ["pawn", "knight", "bishop", "rook", "queen", "king"];
+  const counts = pieceOrder.reduce((accumulator, pieceType) => {
+    accumulator[pieceType] = 0;
+    return accumulator;
+  }, {});
+
+  lostPieces.forEach((pieceType) => {
+    if (Object.prototype.hasOwnProperty.call(counts, pieceType)) {
+      counts[pieceType] += 1;
+    }
+  });
+
+  pieceOrder.forEach((pieceType) => {
+    if (counts[pieceType] <= 0) {
+      return;
+    }
+
+    const li = document.createElement("li");
+    li.textContent = `${capitalize(pieceType)} x${counts[pieceType]}`;
+    listEl.appendChild(li);
+  });
 }
 
 function renderSideEffectsList(listEl, effects) {
@@ -3531,10 +3633,12 @@ function openPromotionPicker(color) {
   });
 
   promotionModalEl.hidden = false;
+  document.body.classList.add("promotion-open");
 }
 
 function closePromotionPicker() {
   promotionModalEl.hidden = true;
+  document.body.classList.remove("promotion-open");
   promotionChoicesEl.innerHTML = "";
 }
 
@@ -3543,6 +3647,7 @@ function clearTransientGameState() {
   pendingEffectDraft = null;
   activeEffects.white = [];
   activeEffects.black = [];
+  game.lostPieces = { white: [], black: [] };
   game.bonusMove = null;
   game.pendingBonusTurns = { white: 0, black: 0 };
   game.safePassageShields = { white: null, black: null };

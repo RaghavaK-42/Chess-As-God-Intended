@@ -188,6 +188,7 @@ button:hover {
   background: color-mix(in srgb, var(--legal) 72%, #ffffff 28%);
   position: absolute;
   box-shadow: 0 0 18px rgba(56, 217, 192, 0.58);
+  z-index: 9;
 }
 
 .square.check {
@@ -201,7 +202,7 @@ button:hover {
   left: 50%;
   top: 50%;
   pointer-events: none;
-  z-index: 7;
+  z-index: 2;
 }
 
 .square.powerup-lightning::before {
@@ -236,7 +237,7 @@ button:hover {
   object-fit: contain;
   pointer-events: none;
   position: relative;
-  z-index: 3;
+  z-index: 5;
   filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.35));
 }
 
@@ -317,7 +318,19 @@ button:hover {
   border-top: 1px dashed #3f5579;
 }
 
+.captures-panel {
+  margin-top: 1rem;
+  padding-top: 0.76rem;
+  border-top: 1px dashed #3f5579;
+}
+
 .effects-panel h3 {
+  margin: 0 0 0.45rem;
+  font-size: 0.99rem;
+  color: #dbe8ff;
+}
+
+.captures-panel h3 {
   margin: 0 0 0.45rem;
   font-size: 0.99rem;
   color: #dbe8ff;
@@ -330,12 +343,30 @@ button:hover {
   gap: 0.31rem;
 }
 
+.captures-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.31rem;
+}
+
 .effects-list li {
   font-size: 0.9rem;
   color: #c2d4f0;
 }
 
+.captures-list li {
+  font-size: 0.9rem;
+  color: #c2d4f0;
+}
+
 .effects-list li.empty {
+  list-style: none;
+  margin-left: -1.1rem;
+  color: var(--muted);
+}
+
+.captures-list li.empty {
   list-style: none;
   margin-left: -1.1rem;
   color: var(--muted);
@@ -348,7 +379,21 @@ button:hover {
   place-items: center;
   padding: 1rem;
   background: rgba(5, 10, 18, 0.75);
-  z-index: 30;
+  z-index: 18;
+}
+
+body.promotion-open .board {
+  filter: brightness(0.55) saturate(0.65);
+}
+
+body.promotion-open .board .piece {
+  opacity: 0.38;
+}
+
+body.promotion-open .board .hazard-icon,
+body.promotion-open .board .coord-file,
+body.promotion-open .board .coord-rank {
+  opacity: 0.25;
 }
 
 .promotion-modal[hidden] {
