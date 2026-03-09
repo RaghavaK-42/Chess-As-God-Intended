@@ -589,12 +589,12 @@ class ChessGame {
         if (!this.isSquareAttacked({ row, col }, enemy, testBoard)) {
           this.board[row][col] = this.board[king.row][king.col];
           this.board[king.row][king.col] = null;
-          return true;
+          return { row, col };
         }
       }
     }
 
-    return false;
+    return null;
   }
 
   getLegalMoves(square, options = {}) {
@@ -1868,6 +1868,7 @@ class ChessGame {
     const movingColor = piece.color;
     const opponentColor = movingColor === "white" ? "black" : "white";
     const wasBonusMove = !!this.bonusMove;
+    const historyEntries = [];
     const capturedPiece = this.board[to.row][to.col];
     const isFriendlyKingSwap = selectedMove.isKingSwap && capturedPiece && capturedPiece.color === movingColor;
     let didCapture = !!capturedPiece && !isFriendlyKingSwap;
@@ -1876,6 +1877,18 @@ class ChessGame {
 
     if (capturedPiece && !isFriendlyKingSwap) {
       this.recordLostPiece(capturedPiece);
+    }
+
+    const moveLabelParts = [
+      `${capitalize(movingColor)} ${piece.type} ${squareToNotation(from)} -> ${squareToNotation(to)}`,
+    ];
+
+    if (capturedPiece && !isFriendlyKingSwap) {
+      moveLabelParts.push(`captured ${capturedPiece.color} ${capturedPiece.type}`);
+    }
+
+    if (wasBonusMove) {
+      moveLabelParts.push("(extra turn move)");
     }
 
     if (selectedMove.isKingSwap && capturedPiece && capturedPiece.color === movingColor) {
@@ -1891,6 +1904,7 @@ class ChessGame {
       if (epPiece) {
         capturedTypeForPawnEmpowerment = epPiece.type;
         this.recordLostPiece(epPiece);
+        moveLabelParts.push(`en passant captured ${epPiece.color} ${epPiece.type}`);
       }
       this.board[selectedMove.capture.row][selectedMove.capture.col] = null;
       didCapture = true;
@@ -1900,6 +1914,7 @@ class ChessGame {
       const rookPiece = this.board[selectedMove.rookFrom.row][selectedMove.rookFrom.col];
       this.board[selectedMove.rookTo.row][selectedMove.rookTo.col] = rookPiece;
       this.board[selectedMove.rookFrom.row][selectedMove.rookFrom.col] = null;
+      moveLabelParts.push("castled");
     }
 
     if (
@@ -1929,6 +1944,20 @@ class ChessGame {
 
             const target = this.board[nr][nc];
             if (!target || this.isCaptureAllowed(other, target, { row: nr, col: nc })) {
+              if (target) {
+                this.recordLostPiece(target);
+                didCapture = true;
+              }
+
+              historyEntries.push({
+                type: "bishop-echo",
+                color: movingColor,
+                turn: currentFullTurn,
+                text: target
+                  ? `${capitalize(movingColor)} Bishop Echo moved bishop ${squareToNotation({ row: r, col: c })} -> ${squareToNotation({ row: nr, col: nc })} and captured ${target.color} ${target.type}.`
+                  : `${capitalize(movingColor)} Bishop Echo moved bishop ${squareToNotation({ row: r, col: c })} -> ${squareToNotation({ row: nr, col: nc })}.`,
+              });
+
               this.board[nr][nc] = other;
               this.board[r][c] = null;
               break outerBishopEcho;
@@ -1974,6 +2003,7 @@ class ChessGame {
 
       const promotionRow = piece.color === "white" ? 0 : 7;
       if (!isStageHazardActive(67) && (to.row === promotionRow || (hasPawnFactory && to.row === earlyPromoRow))) {
+        moveLabelParts.push(`promoted to ${chosenType}`);
         this.board[to.row][to.col] = { type: chosenType, color: piece.color, originParity: (to.row + to.col) % 2 };
 
         if (hasLuckyPromotion) {
@@ -1986,6 +2016,12 @@ class ChessGame {
             const c = to.col + dc;
             if (this.isInside(r, c) && !this.board[r][c]) {
               this.board[r][c] = { type: "knight", color: piece.color, originParity: (r + c) % 2 };
+              historyEntries.push({
+                type: "spawn",
+                color: movingColor,
+                turn: currentFullTurn,
+                text: `${capitalize(movingColor)} Lucky Promotion spawned a knight at ${squareToNotation({ row: r, col: c })}.`,
+              });
               break;
             }
           }
@@ -2010,6 +2046,12 @@ class ChessGame {
         this.recordLostPiece(landedPiece);
         this.board[currentSquareAfterMove.row][currentSquareAfterMove.col] = null;
         didCapture = true;
+        historyEntries.push({
+          type: "mine-death",
+          color: landedPiece.color,
+          turn: currentFullTurn,
+          text: `${capitalize(landedPiece.color)} ${landedPiece.type} died to a mine at ${squareToNotation(currentSquareAfterMove)}.`,
+        });
       }
     }
 
@@ -2058,10 +2100,25 @@ class ChessGame {
     }
 
     const opponentInCheckAfterMove = this.isInCheck(opponentColor);
+    if (opponentInCheckAfterMove) {
+      moveLabelParts.push(`${capitalize(opponentColor)} king in check`);
+    }
+
     if (this.bonusMove && opponentInCheckAfterMove) {
       // Prevent chaining bonus turns while giving check.
       this.bonusMove = null;
     }
+
+    if (this.bonusMove) {
+      moveLabelParts.push("granted extra turn");
+    }
+
+    historyEntries.unshift({
+      type: "move",
+      color: movingColor,
+      turn: currentFullTurn,
+      text: moveLabelParts.join(" | "),
+    });
 
     this.turn = this.bonusMove ? movingColor : opponentColor;
 
@@ -2098,7 +2155,7 @@ class ChessGame {
         this.gameOver = true;
         this.winner = null;
         this.lastMessage = "Bloodlust: no captures in 3 turns. Draw.";
-        return { ok: true, state: this.getState() };
+        return { ok: true, state: this.getState(), historyEntries };
       }
     } else {
       stageHazardRuntime.bloodlustHalfMovesWithoutCapture = 0;
@@ -2114,9 +2171,24 @@ class ChessGame {
         this.winner = null;
         this.lastMessage = "Lame Victory: checkmate converts to stalemate.";
       } else
-      if (hasActiveEffect(this.turn, 46) && this.applyRoyalMercy(this.turn)) {
-        consumeActiveEffect(this.turn, 46);
-        this.lastMessage = `${this.turn} triggered Royal Mercy.`;
+      if (hasActiveEffect(this.turn, 46)) {
+        const mercySquare = this.applyRoyalMercy(this.turn);
+        if (mercySquare) {
+          historyEntries.push({
+            type: "royal-mercy",
+            color: this.turn,
+            turn: currentFullTurn,
+            text: `${capitalize(this.turn)} Royal Mercy moved king to ${squareToNotation(mercySquare)}.`,
+          });
+          consumeActiveEffect(this.turn, 46);
+          this.lastMessage = `${this.turn} triggered Royal Mercy.`;
+        } else {
+          this.gameOver = true;
+          this.winner = isStageHazardActive(89)
+            ? this.turn
+            : (this.turn === "white" ? "black" : "white");
+          this.lastMessage = `Checkmate. ${this.winner} wins.`;
+        }
       } else {
         this.gameOver = true;
         this.winner = isStageHazardActive(89)
@@ -2142,7 +2214,7 @@ class ChessGame {
       this.lastMessage = messages.join(" ");
     }
 
-    return { ok: true, state: this.getState() };
+    return { ok: true, state: this.getState(), historyEntries };
   }
 }
 
@@ -2164,6 +2236,7 @@ const whiteEffectsListEl = document.getElementById("whiteEffectsList");
 const blackEffectsListEl = document.getElementById("blackEffectsList");
 const whiteLostPiecesListEl = document.getElementById("whiteLostPiecesList");
 const blackLostPiecesListEl = document.getElementById("blackLostPiecesList");
+const moveHistoryListEl = document.getElementById("moveHistoryList");
 const effectPickerModalEl = document.getElementById("effectPickerModal");
 const effectPickerPromptEl = document.getElementById("effectPickerPrompt");
 const effectPickerChoicesEl = document.getElementById("effectPickerChoices");
@@ -2178,6 +2251,7 @@ let pendingPromotion = null;
 let pendingEffectDraft = null;
 let devBoardEditMode = false;
 let waluigiBuffer = "";
+let moveHistory = [];
 let completedPlyCount = 0;
 let currentFullTurn = 1;
 let stageHazardState = {
@@ -2205,6 +2279,31 @@ let powerUpLightningSquare = null;
 let clearPowerUpLightningTimeoutId = null;
 let hasPlayedCheckmateAudio = false;
 let hasPlayedStalemateAudio = false;
+
+function squareToNotation(square) {
+  if (!square || !Number.isFinite(square.row) || !Number.isFinite(square.col)) {
+    return "?";
+  }
+  const file = String.fromCharCode(97 + square.col);
+  const rank = String(8 - square.row);
+  return `${file}${rank}`;
+}
+
+function addMoveHistoryEntry(text, metadata = {}) {
+  if (typeof text !== "string" || !text.trim()) {
+    return;
+  }
+
+  moveHistory.push({
+    text: text.trim(),
+    createdAt: Date.now(),
+    ...metadata,
+  });
+}
+
+function clearMoveHistory() {
+  moveHistory = [];
+}
 
 const powerUpAudio = new Audio(POWERUP_SOUND_PATH);
 powerUpAudio.preload = "auto";
@@ -2594,6 +2693,22 @@ function normalizeLostPiecesFromSync(lostPieces) {
   };
 }
 
+function normalizeMoveHistoryFromSync(history) {
+  if (!Array.isArray(history)) {
+    return [];
+  }
+
+  return history
+    .filter((entry) => entry && typeof entry.text === "string")
+    .map((entry) => ({
+      text: entry.text,
+      createdAt: Number(entry.createdAt) || 0,
+      type: typeof entry.type === "string" ? entry.type : null,
+      color: entry.color === "white" || entry.color === "black" ? entry.color : null,
+      turn: Number(entry.turn) || null,
+    }));
+}
+
 function findHazardById(hazardId) {
   if (!Number.isFinite(Number(hazardId))) {
     return null;
@@ -2706,6 +2821,7 @@ function buildSyncSnapshot() {
       pendingPromotion: pendingPromotion ?? null,
       pendingEffectDraft: pendingEffectDraft ?? null,
       devBoardEditMode,
+      moveHistory,
     },
   };
 }
@@ -2783,6 +2899,7 @@ function applySnapshotToRuntime(snapshot) {
   pendingPromotion = runtimeState.pendingPromotion || null;
   pendingEffectDraft = runtimeState.pendingEffectDraft || null;
   devBoardEditMode = !!runtimeState.devBoardEditMode;
+  moveHistory = normalizeMoveHistoryFromSync(runtimeState.moveHistory);
 
   if (!pendingPromotion) {
     closePromotionPicker();
@@ -3121,6 +3238,7 @@ function render() {
   renderGameOverFanfare(state);
   renderActiveEffects();
   renderLostPieces();
+  renderMoveHistory();
 }
 
 function renderActiveEffects() {
@@ -3168,6 +3286,28 @@ function renderSideLostPiecesList(listEl, lostPieces) {
     const li = document.createElement("li");
     li.textContent = `${capitalize(pieceType)} x${counts[pieceType]}`;
     listEl.appendChild(li);
+  });
+}
+
+function renderMoveHistory() {
+  if (!moveHistoryListEl) {
+    return;
+  }
+
+  moveHistoryListEl.innerHTML = "";
+
+  if (!Array.isArray(moveHistory) || moveHistory.length === 0) {
+    const empty = document.createElement("li");
+    empty.className = "empty";
+    empty.textContent = "No moves yet";
+    moveHistoryListEl.appendChild(empty);
+    return;
+  }
+
+  moveHistory.forEach((entry) => {
+    const li = document.createElement("li");
+    li.textContent = entry.text;
+    moveHistoryListEl.appendChild(li);
   });
 }
 
@@ -3507,6 +3647,11 @@ function applyEffectToColor(chosenEffect, color) {
   }
 
   detailTextEl.textContent = `${capitalize(color)} gained ${chosenEffect.name}.`;
+  addMoveHistoryEntry(`${capitalize(color)} picked effect: ${chosenEffect.name}.`, {
+    type: "effect-pick",
+    color,
+    turn: currentFullTurn,
+  });
   triggerPowerUpLightning(color);
   return true;
 }
@@ -3648,6 +3793,7 @@ function clearTransientGameState() {
   activeEffects.white = [];
   activeEffects.black = [];
   game.lostPieces = { white: [], black: [] };
+  clearMoveHistory();
   game.bonusMove = null;
   game.pendingBonusTurns = { white: 0, black: 0 };
   game.safePassageShields = { white: null, black: null };
@@ -3672,6 +3818,20 @@ function commitMove(from, to, promotionType, movingColor) {
     col: to.col,
     color: movingColor,
   };
+
+  if (Array.isArray(result.historyEntries)) {
+    result.historyEntries.forEach((entry) => {
+      if (!entry || typeof entry.text !== "string") {
+        return;
+      }
+      addMoveHistoryEntry(entry.text, {
+        type: entry.type || null,
+        color: entry.color || null,
+        turn: entry.turn || currentFullTurn,
+      });
+    });
+  }
+
   clearPowerUpLightningEffect();
 
   const fullTurnEnded = game.turn !== movingColor || game.gameOver;
@@ -3723,6 +3883,7 @@ boardEl.addEventListener("click", (event) => {
     pendingEffectDraft = null;
     activeEffects.white = [];
     activeEffects.black = [];
+    clearMoveHistory();
     resetTurnAndStageHazards();
     closePromotionPicker();
     closeEffectPicker();

@@ -324,6 +324,12 @@ button:hover {
   border-top: 1px dashed #3f5579;
 }
 
+.history-panel {
+  margin-top: 1rem;
+  padding-top: 0.76rem;
+  border-top: 1px dashed #3f5579;
+}
+
 .effects-panel h3 {
   margin: 0 0 0.45rem;
   font-size: 0.99rem;
@@ -331,6 +337,12 @@ button:hover {
 }
 
 .captures-panel h3 {
+  margin: 0 0 0.45rem;
+  font-size: 0.99rem;
+  color: #dbe8ff;
+}
+
+.history-panel h3 {
   margin: 0 0 0.45rem;
   font-size: 0.99rem;
   color: #dbe8ff;
@@ -350,6 +362,15 @@ button:hover {
   gap: 0.31rem;
 }
 
+.history-list {
+  margin: 0;
+  padding-left: 1.35rem;
+  display: grid;
+  gap: 0.31rem;
+  max-height: 280px;
+  overflow: auto;
+}
+
 .effects-list li {
   font-size: 0.9rem;
   color: #c2d4f0;
@@ -358,6 +379,12 @@ button:hover {
 .captures-list li {
   font-size: 0.9rem;
   color: #c2d4f0;
+}
+
+.history-list li {
+  font-size: 0.88rem;
+  color: #c2d4f0;
+  line-height: 1.3;
 }
 
 .effects-list li.empty {
@@ -369,6 +396,12 @@ button:hover {
 .captures-list li.empty {
   list-style: none;
   margin-left: -1.1rem;
+  color: var(--muted);
+}
+
+.history-list li.empty {
+  list-style: none;
+  margin-left: -1.35rem;
   color: var(--muted);
 }
 
