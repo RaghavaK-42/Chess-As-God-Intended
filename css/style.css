@@ -125,6 +125,32 @@ button:hover {
   font-size: 0.94rem;
 }
 
+.beneficial-odds-control {
+  margin-top: 0.82rem;
+  padding-top: 0.72rem;
+  border-top: 1px dashed #3f5579;
+  display: grid;
+  gap: 0.38rem;
+  max-width: 460px;
+}
+
+.beneficial-odds-label {
+  font-weight: 700;
+  color: #d4e6ff;
+}
+
+.beneficial-odds-slider {
+  width: 100%;
+  accent-color: #63bcff;
+  cursor: pointer;
+}
+
+.beneficial-odds-value {
+  margin: 0;
+  color: #a6c9f2;
+  font-size: 0.92rem;
+}
+
 .board-wrap {
   display: grid;
   grid-template-columns: minmax(380px, 860px) minmax(280px, 1fr);
@@ -686,6 +712,10 @@ body.promotion-open .board .coord-rank {
 }
 
 @media (max-width: 900px) {
+  .beneficial-odds-control {
+    max-width: none;
+  }
+
   .promotion-choices {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }

@@ -20,6 +20,8 @@ const POWERUP_SOUND_PATH = "Sounds/Lightsaber.mp3";
 const POWERUP_LIGHTNING_DURATION_MS = 900;
 const CHECKMATE_SOUND_PATH = "Sounds/ode-to-joy.mp3";
 const STALEMATE_SOUND_PATH = "Sounds/roblox_oof.mp3";
+const GAMBLING_SOUND_PATH = "Sounds/lets-go-gambling.mp3";
+const GAMBLING_PREVIEW_DURATION_MS = 2000;
 
 function sanitizeGameName(rawName) {
   if (typeof rawName !== "string") {
@@ -2244,6 +2246,8 @@ const turnCounterTextEl = document.getElementById("turnCounterText");
 const stageHazardTextEl = document.getElementById("stageHazardText");
 const stageHazardDetailTextEl = document.getElementById("stageHazardDetailText");
 const saveBtnEl = document.getElementById("saveBtn");
+const beneficialOddsSliderEl = document.getElementById("beneficialOddsSlider");
+const beneficialOddsValueTextEl = document.getElementById("beneficialOddsValueText");
 
 let selected = null;
 let legalTargets = [];
@@ -2266,6 +2270,16 @@ let stageHazardRuntime = {
   blockedTiles: new Set(),
   bloodlustHalfMovesWithoutCapture: 0,
 };
+
+const BENEFICIAL_EFFECT_ODDS_PRESETS = [
+  { label: "Low (1 in 5)", numerator: 1, denominator: 5 },
+  { label: "Normal (1 in 4)", numerator: 1, denominator: 4 },
+  { label: "High (1 in 3)", numerator: 1, denominator: 3 },
+  { label: "Masochist (1 in 2)", numerator: 1, denominator: 2 },
+  { label: "Guaranteed (1/1)", numerator: 1, denominator: 1 },
+];
+const DEFAULT_BENEFICIAL_EFFECT_ODDS_INDEX = 1;
+let beneficialEffectOddsIndex = DEFAULT_BENEFICIAL_EFFECT_ODDS_INDEX;
 
 const syncInstanceId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 let syncLocalWriteCounter = 0;
@@ -2311,12 +2325,42 @@ const checkmateAudio = new Audio(CHECKMATE_SOUND_PATH);
 checkmateAudio.preload = "auto";
 const stalemateAudio = new Audio(STALEMATE_SOUND_PATH);
 stalemateAudio.preload = "auto";
+const gamblingAudio = new Audio(GAMBLING_SOUND_PATH);
+gamblingAudio.preload = "auto";
+let stopGamblingPreviewTimeoutId = null;
 
 function stopAllGameAudio() {
-  [powerUpAudio, checkmateAudio, stalemateAudio].forEach((audio) => {
+  [powerUpAudio, checkmateAudio, stalemateAudio, gamblingAudio].forEach((audio) => {
     audio.pause();
     audio.currentTime = 0;
   });
+
+  if (stopGamblingPreviewTimeoutId) {
+    window.clearTimeout(stopGamblingPreviewTimeoutId);
+    stopGamblingPreviewTimeoutId = null;
+  }
+}
+
+function playGamblingPreview() {
+  if (stopGamblingPreviewTimeoutId) {
+    window.clearTimeout(stopGamblingPreviewTimeoutId);
+    stopGamblingPreviewTimeoutId = null;
+  }
+
+  try {
+    gamblingAudio.pause();
+    gamblingAudio.currentTime = 0;
+    void gamblingAudio.play();
+  } catch {
+    // Ignore playback failures from browser autoplay restrictions.
+    return;
+  }
+
+  stopGamblingPreviewTimeoutId = window.setTimeout(() => {
+    stopGamblingPreviewTimeoutId = null;
+    gamblingAudio.pause();
+    gamblingAudio.currentTime = 0;
+  }, GAMBLING_PREVIEW_DURATION_MS);
 }
 
 let captureCooldownByColor = {
@@ -2357,6 +2401,61 @@ function isMineSquare(row, col) {
 
 function isBlockedTileSquare(row, col) {
   return stageHazardRuntime.blockedTiles.has(squareKey(row, col));
+}
+
+function normalizeBeneficialEffectOddsIndex(value) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) {
+    return DEFAULT_BENEFICIAL_EFFECT_ODDS_INDEX;
+  }
+  if (parsed < 0 || parsed >= BENEFICIAL_EFFECT_ODDS_PRESETS.length) {
+    return DEFAULT_BENEFICIAL_EFFECT_ODDS_INDEX;
+  }
+  return parsed;
+}
+
+function getBeneficialEffectOddsPreset(index = beneficialEffectOddsIndex) {
+  const safeIndex = normalizeBeneficialEffectOddsIndex(index);
+  return BENEFICIAL_EFFECT_ODDS_PRESETS[safeIndex];
+}
+
+function formatBeneficialEffectOddsLabel(index = beneficialEffectOddsIndex) {
+  const preset = getBeneficialEffectOddsPreset(index);
+  return preset.label;
+}
+
+function updateBeneficialEffectOddsUi() {
+  if (beneficialOddsSliderEl) {
+    beneficialOddsSliderEl.value = String(beneficialEffectOddsIndex);
+  }
+
+  if (beneficialOddsValueTextEl) {
+    beneficialOddsValueTextEl.textContent = formatBeneficialEffectOddsLabel();
+  }
+}
+
+function setBeneficialEffectOddsIndex(index, options = {}) {
+  const { playPreview = false } = options;
+  const previousIndex = beneficialEffectOddsIndex;
+  beneficialEffectOddsIndex = normalizeBeneficialEffectOddsIndex(index);
+  updateBeneficialEffectOddsUi();
+
+  if (playPreview && beneficialEffectOddsIndex !== previousIndex) {
+    playGamblingPreview();
+  }
+}
+
+async function clearAllFirebaseSaves() {
+  try {
+    await set(ref(firebaseDb, FIREBASE_SAVES_ROOT), null);
+    latestSeenSyncRevision = 0;
+    detailTextEl.textContent = "All Firebase save data cleared.";
+    return true;
+  } catch (error) {
+    console.error("Failed to clear Firebase saves:", error);
+    detailTextEl.textContent = "Failed to clear Firebase save data.";
+    return false;
+  }
 }
 
 function isOnOrAdjacentToMine(row, col) {
@@ -2822,6 +2921,7 @@ function buildSyncSnapshot() {
       pendingEffectDraft: pendingEffectDraft ?? null,
       devBoardEditMode,
       moveHistory,
+      beneficialEffectOddsIndex,
     },
   };
 }
@@ -2898,6 +2998,7 @@ function applySnapshotToRuntime(snapshot) {
 
   pendingPromotion = runtimeState.pendingPromotion || null;
   pendingEffectDraft = runtimeState.pendingEffectDraft || null;
+  setBeneficialEffectOddsIndex(runtimeState.beneficialEffectOddsIndex);
   devBoardEditMode = !!runtimeState.devBoardEditMode;
   moveHistory = normalizeMoveHistoryFromSync(runtimeState.moveHistory);
 
@@ -3114,6 +3215,7 @@ function render() {
   const state = game.getState();
   const activeHazardId = getActiveStageHazardId();
   boardEl.innerHTML = "";
+  updateBeneficialEffectOddsUi();
 
   for (let row = 0; row < 8; row += 1) {
     for (let col = 0; col < 8; col += 1) {
@@ -3590,7 +3692,8 @@ function shouldTriggerEffectDraft() {
   if (isStageHazardActive(69)) {
     return false;
   }
-  return Math.random() < (1 / 4);
+  const currentOdds = getBeneficialEffectOddsPreset();
+  return Math.random() < (currentOdds.numerator / currentOdds.denominator);
 }
 
 function startEffectDraft(color) {
@@ -3656,9 +3759,14 @@ function applyEffectToColor(chosenEffect, color) {
   return true;
 }
 
-function applyDevEffectFromInput(rawInput) {
+async function applyDevEffectFromInput(rawInput) {
   if (!rawInput) {
     return false;
+  }
+
+  const normalizedInput = rawInput.trim().toLowerCase();
+  if (normalizedInput === "empty") {
+    return clearAllFirebaseSaves();
   }
 
   const parsed = rawInput.trim().match(/^(\d{1,3})(?:\s*([wb]))?$/i);
@@ -3978,7 +4086,20 @@ effectPickerChoicesEl.addEventListener("click", (event) => {
   render();
 });
 
-document.addEventListener("keydown", (event) => {
+if (beneficialOddsSliderEl) {
+  beneficialOddsSliderEl.addEventListener("input", () => {
+    setBeneficialEffectOddsIndex(beneficialOddsSliderEl.value, { playPreview: true });
+  });
+
+  beneficialOddsSliderEl.addEventListener("change", async () => {
+    if (!currentSaveGameStateRef || isApplyingRemoteSnapshot) {
+      return;
+    }
+    await saveStateToFirebase("odds-change");
+  });
+}
+
+document.addEventListener("keydown", async (event) => {
   if (event.key === "Enter" && !event.repeat) {
     event.preventDefault();
     void triggerManualSave("enter-save");
@@ -4012,7 +4133,7 @@ document.addEventListener("keydown", (event) => {
     return;
   }
 
-  if (applyDevEffectFromInput(raw)) {
+  if (await applyDevEffectFromInput(raw)) {
     render();
   }
 });

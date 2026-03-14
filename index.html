@@ -24,6 +24,20 @@
       <p id="turnCounterText">Turn 1</p>
       <p id="stageHazardText">Stage Hazard: none</p>
       <p id="stageHazardDetailText">Stage Hazard Description: none</p>
+      <div class="beneficial-odds-control">
+        <label for="beneficialOddsSlider" class="beneficial-odds-label">Beneficial Effect Odds</label>
+        <input
+          id="beneficialOddsSlider"
+          class="beneficial-odds-slider"
+          type="range"
+          min="0"
+          max="4"
+          step="1"
+          value="1"
+          aria-describedby="beneficialOddsValueText"
+        />
+        <p id="beneficialOddsValueText" class="beneficial-odds-value">Normal (1 in 4)</p>
+      </div>
     </section>
 
     <section class="board-wrap">
